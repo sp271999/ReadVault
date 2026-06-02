@@ -6,41 +6,56 @@ use App\Models\Book;
 use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class BookController extends Controller
 {
     public function __construct()
     {
-        $this->middleware('permission:view books')->only(['index', 'show', 'gallery']);
-        $this->middleware('permission:create books')->only(['create', 'store']);
-        $this->middleware('permission:edit books')->only(['edit', 'update']);
-        $this->middleware('permission:delete books')->only(['destroy']);
+        $this->middleware('permission:view books')
+            ->only(['index', 'show', 'gallery']);
+
+        $this->middleware('permission:create books')
+            ->only(['create', 'store']);
+
+        $this->middleware('permission:edit books')
+            ->only(['edit', 'update']);
+
+        $this->middleware('permission:delete books')
+            ->only(['destroy']);
     }
 
-    /* ===================== INDEX ===================== */
+    /* ================= INDEX ================= */
+
     public function index(Request $request)
-{
-    $query = Book::with('category');
+    {
+        $query = Book::with('category');
 
-    // 🔍 SEARCH FILTER
-    if ($request->filled('search')) {
-        $search = $request->search;
+        if ($request->filled('search')) {
 
-        $query->where('title', 'like', "%{$search}%")
-              ->orWhere('author', 'like', "%{$search}%")
-              ->orWhereHas('category', function ($q) use ($search) {
-                  $q->where('name', 'like', "%{$search}%");
-              });
+            $search = $request->search;
+
+            $query->where(function ($q) use ($search) {
+
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('author', 'like', "%{$search}%")
+                  ->orWhereHas('category', function ($cat) use ($search) {
+
+                      $cat->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $books = $query->latest()->get();
+
+        return view('books.index', compact('books'));
     }
 
-    $books = $query->latest()->get();
+    /* ================= PDF DOWNLOAD ================= */
 
-    return view('books.index', compact('books'));
-}
-
- public function downloadPdf()
+    public function downloadPdf()
     {
-        $books = Book::all();
+        $books = Book::with('category')->get();
 
         $pdf = Pdf::loadView('books.pdf', compact('books'))
                   ->setPaper('A4', 'portrait');
@@ -48,16 +63,17 @@ class BookController extends Controller
         return $pdf->download('books-list.pdf');
     }
 
+    /* ================= CREATE ================= */
 
-
-    /* ===================== CREATE ===================== */
     public function create()
     {
         $categories = Category::orderBy('name')->get();
+
         return view('books.create', compact('categories'));
     }
 
-    /* ===================== STORE ===================== */
+    /* ================= STORE ================= */
+
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -69,33 +85,41 @@ class BookController extends Controller
         ]);
 
         if ($request->hasFile('image')) {
-            $validated['image'] = $request->file('image')->store('books', 'public');
+
+            $validated['image'] = $request->file('image')
+                ->store('books', 'public');
         }
 
         Book::create($validated);
 
-        return redirect()->route('books.index')
-                         ->with('success', 'Book added successfully');
+        return redirect()
+            ->route('books.index')
+            ->with('success', 'Book added successfully');
     }
 
-    /* ===================== SHOW ===================== */
+    /* ================= SHOW ================= */
+
     public function show(string $id)
     {
         $book = Book::with('category')->findOrFail($id);
+
         return view('books.show', compact('book'));
     }
 
-    /* ===================== EDIT ===================== */
-    public function edit( $id)
+    /* ================= EDIT ================= */
+
+    public function edit(string $id)
     {
         $book = Book::findOrFail($id);
-    $categories = Category::all();
 
-    return view('books.edit', compact('book', 'categories'));
-}
+        $categories = Category::orderBy('name')->get();
 
-    /* ===================== UPDATE ===================== */
-    public function update(Request $request,  $id)
+        return view('books.edit', compact('book', 'categories'));
+    }
+
+    /* ================= UPDATE ================= */
+
+    public function update(Request $request, string $id)
     {
         $book = Book::findOrFail($id);
 
@@ -108,37 +132,51 @@ class BookController extends Controller
         ]);
 
         if ($request->hasFile('image')) {
-            if ($book->image) {
+
+            if ($book->image &&
+                Storage::disk('public')->exists($book->image)) {
+
                 Storage::disk('public')->delete($book->image);
             }
-            $validated['image'] = $request->file('image')->store('books', 'public');
+
+            $validated['image'] = $request->file('image')
+                ->store('books', 'public');
         }
 
         $book->update($validated);
 
-        return redirect()->route('books.index')
-                         ->with('success', 'Book updated successfully');
+        return redirect()
+            ->route('books.index')
+            ->with('success', 'Book updated successfully');
     }
 
-    /* ===================== DELETE ===================== */
+    /* ================= DELETE ================= */
+
     public function destroy(string $id)
     {
         $book = Book::findOrFail($id);
 
-        if ($book->image) {
+        if ($book->image &&
+            Storage::disk('public')->exists($book->image)) {
+
             Storage::disk('public')->delete($book->image);
         }
 
         $book->delete();
 
-        return redirect()->route('books.index')
-                         ->with('success', 'Book deleted successfully');
+        return redirect()
+            ->route('books.index')
+            ->with('success', 'Book deleted successfully');
     }
 
-    /* ===================== GALLERY ===================== */
+    /* ================= GALLERY ================= */
+
     public function gallery()
     {
-        $books = Book::with('category')->latest()->get();
+        $books = Book::with('category')
+                     ->latest()
+                     ->get();
+
         return view('books.gallery', compact('books'));
     }
 }

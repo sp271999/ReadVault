@@ -10,7 +10,14 @@
     
     use  App\Http\Controllers\Admin\CategoryController;
     use  App\Http\Controllers\Admin\DashboardController;
+    use App\Jobs\BookReminderJob;
 
+    Route::get('/test-job', function () {
+
+    BookReminderJob::dispatch();
+
+    return 'Job Added';
+});
 
 
         Route::prefix('admin')
